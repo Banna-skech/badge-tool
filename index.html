@@ -195,11 +195,13 @@ async function generateOutput(emps){
   const bd2=[...emps].sort((a,b)=>a.jobNumber.localeCompare(b.jobNumber,'zh-CN'));
   const bs=wb.addWorksheet('工牌');bs.columns=[{key:'chineseName',width:8.6},{key:'engName',width:18.5},{key:'jobNumber',width:8}];
   bs.addRow(['姓名','英文名/姓名拼音','工号']);bd2.forEach(e=>bs.addRow([e.chineseName,e.engName,e.jobNumber]));ss(bs,1,1,3);
+  const bd2p=bd2.map(e=>({'姓名':e.chineseName,'英文名/姓名拼音':e.engName,'工号':e.jobNumber}));
   const sd=[...emps].sort((a,b)=>a.deptL2.localeCompare(b.deptL2,'zh-CN'));
   const ss2=wb.addWorksheet('座位牌');ss2.columns=[{key:'chineseName',width:8.6},{key:'seatBadgeName',width:18.5},{key:'jobNumber',width:8},{key:'combinedDept',width:33.9},{key:'jobTitle',width:19.6}];
   ss2.addRow(['姓名','英文名/姓名拼音','工号','二级部门','详细职位名称']);sd.forEach(e=>ss2.addRow([e.chineseName,e.seatBadgeName,e.jobNumber,e.combinedDept,e.jobTitle]));ss(ss2,1,1,5);
+  const sdp=sd.map(e=>({'姓名':e.chineseName,'英文名/姓名拼音':e.seatBadgeName,'工号':e.jobNumber,'二级部门':e.combinedDept,'详细职位名称':e.jobTitle}));
   const buf=await wb.xlsx.writeBuffer();
-  return {blob:new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),badgeData:bd2,seatData:sd};
+  return {blob:new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),badgeData:bd2p,seatData:sdp};
 }
 
 const uz=document.getElementById('uploadZone'),fi=document.getElementById('fileInput'),fc=document.getElementById('fileChip'),fn=document.getElementById('fileName'),rf=document.getElementById('removeFile'),pb=document.getElementById('processBtn'),sdv=document.getElementById('status'),st=document.getElementById('statusText'),db=document.getElementById('downloadBtn'),pv=document.getElementById('preview'),pt=document.getElementById('previewTable'),s1=document.getElementById('step1'),s2=document.getElementById('step2'),s3=document.getElementById('step3');

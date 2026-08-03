@@ -6,6 +6,14 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+
 # Temp
 *.tmp
 ~$*.xlsx
@@ -13,3 +21,16 @@ Thumbs.db
 
 # Node (if ever added)
 node_modules/
+
+# Output / generated files
+output/
+*.zip
+
+# Environment
+.env
+.env.local
+
+# Test artifacts
+test_*.py
+!test_e2e.py
+!test_routes.py

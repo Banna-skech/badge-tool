@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>在职员工Excel处理 - 工牌&座位牌</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+    .loading-spinner {
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #22c55e;
+        border-radius: 50%;
+        width: 40px; height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    table { border-collapse: collapse; }
+    th, td { white-space: nowrap; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<div class="container mx-auto max-w-4xl px-4 py-8">
+    <!-- Header -->
+    <div class="text-center mb-4">
+        <h1 class="text-2xl font-bold text-gray-800">在职员工Excel处理工具</h1>
+        <p class="text-gray-500 mt-1 text-sm">上传系统导出的在职员工表 → 自动生成 工牌 + 座位牌</p>
+    </div>
+
+    <div id="app" class="bg-white rounded-xl shadow-lg p-6">
+        <!-- Step 1: Upload -->
+        <div class="mb-6">
+            <div class="flex items-center gap-3 mb-3">
+                <span class="flex items-center justify-center w-8 h-8 rounded-full bg-green-600 text-white font-bold text-sm">1</span>
+                <h2 class="text-lg font-semibold text-gray-800">上传在职员工 Excel 原始表</h2>
+            </div>
+            <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-green-400 transition-colors cursor-pointer bg-gray-50">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                          d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <p class="mt-2 text-sm text-gray-600">
+                    <span class="font-medium text-green-600">点击上传</span> 或拖拽 Excel 文件到此处
+                </p>
+                <p class="text-xs text-gray-400 mt-1">支持从系统导出的在职员工 .xlsx 文件</p>
+                <input type="file" id="file-input" accept=".xlsx,.xls" class="hidden">
+            </div>
+            <div id="upload-status" class="mt-3"></div>
+        </div>
+
+        <!-- Step 2: Preview & mapping (hidden initially) -->
+        <div id="step-preview" class="mb-6" style="display:none;"></div>
+
+        <!-- Step 3: Download (hidden initially) -->
+        <div id="step-download" class="mb-6" style="display:none;"></div>
+    </div>
+
+    <!-- Footer -->
+    <p class="text-center text-xs text-gray-400 mt-4">
+        所有处理均在浏览器本地完成，数据不会上传到任何服务器
+    </p>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────
+// Chinese Surname → Pinyin Lookup (ordered by frequency)
+// ─────────────────────────────────────────────────────────
+const PINYIN_SURNAME = {
+"赵":"Zhao","钱":"Qian","孙":"Sun","李":"Li","周":"Zhou","吴":"Wu","郑":"Zheng","王":"Wang","冯":"Feng","陈":"Chen",
+"褚":"Chu","卫":"Wei","蒋":"Jiang","沈":"Shen","韩":"Han","杨":"Yang","朱":"Zhu","秦":"Qin","尤":"You","许":"Xu",
+"何":"He","吕":"Lyu","施":"Shi","张":"Zhang","孔":"Kong","曹":"Cao","严":"Yan","华":"Hua","金":"Jin","魏":"Wei",
+"陶":"Tao","姜":"Jiang","戚":"Qi","谢":"Xie","邹":"Zou","喻":"Yu","柏":"Bai","水":"Shui","窦":"Dou","章":"Zhang",
+"云":"Yun","苏":"Su","潘":"Pan","葛":"Ge","奚":"Xi","范":"Fan","彭":"Peng","郎":"Lang","鲁":"Lu","韦":"Wei",
+"昌":"Chang","马":"Ma","苗":"Miao","凤":"Feng","花":"Hua","方":"Fang","俞":"Yu","任":"Ren","袁":"Yuan","柳":"Liu",
+"酆":"Feng","鲍":"Bao","史":"Shi","唐":"Tang","费":"Fei","廉":"Lian","岑":"Cen","薛":"Xue","雷":"Lei","贺":"He",
+"倪":"Ni","汤":"Tang","滕":"Teng","殷":"Yin","罗":"Luo","毕":"Bi","郝":"Hao","邬":"Wu","安":"An","常":"Chang",
+"乐":"Yue","于":"Yu","时":"Shi","傅":"Fu","皮":"Pi","卞":"Bian","齐":"Qi","康":"Kang","伍":"Wu","余":"Yu",
+"元":"Yuan","卜":"Bu","顾":"Gu","孟":"Meng","平":"Ping","黄":"Huang","和":"He","穆":"Mu","萧":"Xiao","尹":"Yin",
+"姚":"Yao","邵":"Shao","湛":"Zhan","汪":"Wang","祁":"Qi","毛":"Mao","禹":"Yu","狄":"Di","米":"Mi","贝":"Bei",
+"明":"Ming","臧":"Zang","计":"Ji","伏":"Fu","成":"Cheng","戴":"Dai","谈":"Tan","宋":"Song","茅":"Mao","庞":"Pang",
+"熊":"Xiong","纪":"Ji","舒":"Shu","屈":"Qu","项":"Xiang","祝":"Zhu","董":"Dong","梁":"Liang","杜":"Du","阮":"Ruan",
+"蓝":"Lan","闵":"Min","席":"Xi","季":"Ji","麻":"Ma","强":"Qiang","贾":"Jia","路":"Lu","娄":"Lou","危":"Wei",
+"江":"Jiang","童":"Tong","颜":"Yan","郭":"Guo","梅":"Mei","盛":"Sheng","林":"Lin","刁":"Diao","钟":"Zhong",
+"徐":"Xu","邱":"Qiu","骆":"Luo","高":"Gao","夏":"Xia","蔡":"Cai","田":"Tian","樊":"Fan","胡":"Hu","凌":"Ling",
+"霍":"Huo","虞":"Yu","万":"Wan","支":"Zhi","柯":"Ke","昝":"Zan","管":"Guan","卢":"Lu","莫":"Mo","经":"Jing",
+"房":"Fang","裘":"Qiu","缪":"Miao","干":"Gan","解":"Xie","应":"Ying","宗":"Zong","丁":"Ding","宣":"Xuan",
+"贲":"Ben","邓":"Deng","郁":"Yu","单":"Shan","杭":"Hang","洪":"Hong","包":"Bao","诸":"Zhu","左":"Zuo","石":"Shi",
+"崔":"Cui","吉":"Ji","钮":"Niu","龚":"Gong","程":"Cheng","嵇":"Ji","邢":"Xing","滑":"Hua","裴":"Pei","陆":"Lu",
+"荣":"Rong","翁":"Weng","荀":"Xun","羊":"Yang","於":"Yu","惠":"Hui","甄":"Zhen","麴":"Qu","家":"Jia","封":"Feng",
+"芮":"Rui","羿":"Yi","储":"Chu","靳":"Jin","汲":"Ji","邴":"Bing","糜":"Mi","松":"Song","井":"Jing","段":"Duan",
+"富":"Fu","巫":"Wu","乌":"Wu","焦":"Jiao","巴":"Ba","弓":"Gong","牧":"Mu","隗":"Kui","山":"Shan","谷":"Gu",
+"车":"Che","侯":"Hou","宓":"Mi","蓬":"Peng","全":"Quan","郗":"Xi","班":"Ban","仰":"Yang","秋":"Qiu","仲":"Zhong",
+"伊":"Yi","宫":"Gong","宁":"Ning","仇":"Qiu","栾":"Luan","暴":"Bao","甘":"Gan","钭":"Tou","厉":"Li","戎":"Rong",
+"祖":"Zu","武":"Wu","符":"Fu","刘":"Liu","景":"Jing","詹":"Zhan","束":"Shu","龙":"Long","叶":"Ye","幸":"Xing",
+"司":"Si","韶":"Shao","郜":"Gao","黎":"Li","蓟":"Ji","薄":"Bo","印":"Yin","宿":"Su","白":"Bai","怀":"Huai",
+"蒲":"Pu","邰":"Tai","从":"Cong","鄂":"E","索":"Suo","咸":"Xian","籍":"Ji","赖":"Lai","卓":"Zhuo","蔺":"Lin",
+"屠":"Tu","蒙":"Meng","池":"Chi","乔":"Qiao","阴":"Yin","鬱":"Yu","胥":"Xu","能":"Neng","苍":"Cang","双":"Shuang",
+"闻":"Wen","莘":"Shen","党":"Dang","翟":"Zhai","谭":"Tan","贡":"Gong","劳":"Lao","逄":"Pang","姬":"Ji","申":"Shen",
+"扶":"Fu","堵":"Du","冉":"Ran","宰":"Zai","郦":"Li","雍":"Yong","卻":"Xi","璩":"Qu","桑":"Sang","桂":"Gui",
+"濮":"Pu","牛":"Niu","寿":"Shou","通":"Tong","边":"Bian","扈":"Hu","燕":"Yan","冀":"Ji","郏":"Jia","浦":"Pu",
+"尚":"Shang","农":"Nong","温":"Wen","别":"Bie","庄":"Zhuang","晏":"Yan","柴":"Chai","瞿":"Qu","阎":"Yan","充":"Chong",
+"慕":"Mu","连":"Lian","茹":"Ru","习":"Xi","宦":"Huan","艾":"Ai","鱼":"Yu","容":"Rong","向":"Xiang","古":"Gu",
+"易":"Yi","慎":"Shen","戈":"Ge","廖":"Liao","庾":"Yu","终":"Zhong","暨":"Ji","居":"Ju","衡":"Heng","步":"Bu",
+"都":"Du","耿":"Geng","满":"Man","弘":"Hong","匡":"Kuang","国":"Guo","文":"Wen","寇":"Kou","广":"Guang",
+"禄":"Lu","阙":"Que","东":"Dong","欧":"Ou","殳":"Shu","沃":"Wo","利":"Li","蔚":"Wei","越":"Yue","夔":"Kui",
+"隆":"Long","师":"Shi","巩":"Gong","厍":"She","聂":"Nie","晁":"Chao","勾":"Gou","敖":"Ao","融":"Rong","冷":"Leng",
+"訾":"Zi","辛":"Xin","阚":"Kan","那":"Na","简":"Jian","饶":"Rao","空":"Kong","曾":"Zeng","毋":"Wu","沙":"Sha",
+"乜":"Nie","养":"Yang","鞠":"Ju","须":"Xu","丰":"Feng","巢":"Chao","关":"Guan","蒯":"Kuai","相":"Xiang",
+"查":"Zha","后":"Hou","荆":"Jing","红":"Hong","游":"You","竺":"Zhu","权":"Quan","逮":"Dai","盍":"He","益":"Yi",
+"桓":"Huan","公":"Gong","闫":"Yan","覃":"Tan","贺":"He","兰":"Lan","侯":"Hou","缪":"Miao","莫":"Mo","童":"Tong",
+"于":"Yu","肖":"Xiao","苑":"Yuan","付":"Fu","原":"Yuan","冉":"Ran","阙":"Que","丛":"Cong","安":"An","艾":"Ai",
+"乌":"Wu","农":"Nong","战":"Zhan","达":"Da","延":"Yan","臧":"Zang","展":"Zhan","刁":"Diao","仝":"Tong","恽":"Yun",
+"晁":"Chao","糜":"Mi","斯":"Si","晋":"Jin","寸":"Cun","杞":"Qi","普":"Pu","扎":"Zha","冷":"Leng","游":"You",
+"仲":"Zhong","司":"Si","员":"Yun","宾":"Bin","郇":"Xun","戎":"Rong","干":"Gan","官":"Guan","应":"Ying",
+"曲":"Qu","贠":"Yun","符":"Fu","普":"Pu","栾":"Luan","盖":"Ge","鲜":"Xian","邰":"Tai","郜":"Gao","厉":"Li",
+"芮":"Rui","汲":"Ji","邴":"Bing","糜":"Mi","松":"Song","富":"Fu","巫":"Wu","焦":"Jiao","巴":"Ba","弓":"Gong",
+"隗":"Kui","山":"Shan","谷":"Gu","车":"Che","宓":"Mi","蓬":"Peng","全":"Quan","郗":"Xi","班":"Ban","仰":"Yang",
+"秋":"Qiu","仲":"Zhong","伊":"Yi","宫":"Gong","宁":"Ning","仇":"Qiu","栾":"Luan","暴":"Bao","甘":"Gan",
+"钭":"Tou","厉":"Li","戎":"Rong","祖":"Zu","武":"Wu","符":"Fu","刘":"Liu","景":"Jing","詹":"Zhan","束":"Shu",
+"龙":"Long","叶":"Ye","幸":"Xing","司":"Si","韶":"Shao","郜":"Gao","黎":"Li","蓟":"Ji","薄":"Bo","印":"Yin",
+"宿":"Su","白":"Bai","怀":"Huai","蒲":"Pu","邰":"Tai","从":"Cong","鄂":"E","索":"Suo","咸":"Xian","籍":"Ji",
+"赖":"Lai","卓":"Zhuo","蔺":"Lin","屠":"Tu","蒙":"Meng","池":"Chi","乔":"Qiao","阴":"Yin","鬱":"Yu","胥":"Xu",
+"能":"Neng","苍":"Cang","双":"Shuang","闻":"Wen","莘":"Shen","党":"Dang","翟":"Zhai","谭":"Tan","贡":"Gong",
+"劳":"Lao","逄":"Pang","姬":"Ji","申":"Shen","扶":"Fu","堵":"Du","冉":"Ran","宰":"Zai","郦":"Li","雍":"Yong",
+"卻":"Xi","璩":"Qu","桑":"Sang","桂":"Gui","濮":"Pu","牛":"Niu","寿":"Shou","通":"Tong","边":"Bian","扈":"Hu",
+"燕":"Yan","冀":"Ji","郏":"Jia","浦":"Pu","尚":"Shang","农":"Nong","温":"Wen","别":"Bie","庄":"Zhuang",
+"晏":"Yan","柴":"Chai","瞿":"Qu","阎":"Yan","充":"Chong","慕":"Mu","连":"Lian","茹":"Ru","习":"Xi","宦":"Huan",
+"艾":"Ai","鱼":"Yu","容":"Rong","向":"Xiang","古":"Gu","易":"Yi","慎":"Shen","戈":"Ge","廖":"Liao","庾":"Yu",
+"终":"Zhong","暨":"Ji","居":"Ju","衡":"Heng","步":"Bu","都":"Du","耿":"Geng","满":"Man","弘":"Hong","匡":"Kuang",
+"国":"Guo","文":"Wen","寇":"Kou","广":"Guang","禄":"Lu","阙":"Que","东":"Dong","欧":"Ou","殳":"Shu","沃":"Wo",
+"利":"Li","蔚":"Wei","越":"Yue","夔":"Kui","隆":"Long","师":"Shi","巩":"Gong","厍":"She","聂":"Nie",
+"晁":"Chao","勾":"Gou","敖":"Ao","融":"Rong","冷":"Leng","訾":"Zi","辛":"Xin","阚":"Kan","那":"Na","简":"Jian",
+"饶":"Rao","空":"Kong","曾":"Zeng","毋":"Wu","沙":"Sha","乜":"Nie","养":"Yang","鞠":"Ju","须":"Xu","丰":"Feng",
+"巢":"Chao","关":"Guan","蒯":"Kuai","相":"Xiang","查":"Zha","后":"Hou","荆":"Jing","红":"Hong","游":"You",
+"竺":"Zhu","权":"Quan","逮":"Dai","盍":"He","益":"Yi","桓":"Huan","公":"Gong",
+};
+
+// ─────────────────────────────────────────────────────────
+// Column auto-detection
+// ─────────────────────────────────────────────────────────
+const COLUMN_KEYWORDS = {
+    "姓名":  ["姓名","名字","员工姓名"],
+    "英文名": ["英文名","英文姓名","姓名拼音","拼音","EngName","English"],
+    "工号":  ["工号","员工编号","JobNumber","UserID"],
+    "二级部门": ["二级部门","部门","ThirdLevel"],
+    "三级部门": ["三级部门","子部门","FourthLevel"],
+    "职位":  ["详细职位名称","职位名称","职位","岗位","职务"],
+};
+
+// ─────────────────────────────────────────────────────────
+// Utility functions
+// ─────────────────────────────────────────────────────────
+function $(sel) { return document.querySelector(sel); }
+
+function capitalize(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+function normalizeEngname(name) {
+    // Capitalize each part separated by space or underscore
+    if (!name) return '';
+    return name.split(/([ _])/).map(part => {
+        if (part === ' ' || part === '_') return part;
+        return capitalize(part);
+    }).join('');
+}
+
+function getFirstEngname(name) {
+    // Get the first part (before space/underscore)
+    if (!name) return '';
+    if (name.includes(' ')) return name.split(' ')[0];
+    if (name.includes('_')) return name.split('_')[0];
+    return name;
+}
+
+function getSurnamePinyin(chineseName) {
+    if (!chineseName) return '';
+    const firstChar = chineseName[0];
+    return PINYIN_SURNAME[firstChar] || firstChar;
+}
+
+function formatBadgeEngname(engname) {
+    return getFirstEngname(normalizeEngname(engname));
+}
+
+function formatSeatEngname(engname, chineseName) {
+    const first = getFirstEngname(normalizeEngname(engname));
+    const surname = getSurnamePinyin(chineseName);
+    return surname ? first + '_' + surname : first;
+}
+
+function naturalSortKey(str) {
+    // Split digits for natural sorting: digit groups sorted numerically
+    const parts = str.split(/(\d+)/);
+    return parts.map((p, i) => i % 2 === 1 ? [0, parseInt(p, 10)] : [1, p]);
+}
+
+// String comparison by Unicode code point (matches Python default behavior)
+function cmpStr(a, b) {
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// Multi-level comparison helper
+function multiCmp(keysA, keysB) {
+    for (let i = 0; i < Math.min(keysA.length, keysB.length); i++) {
+        const a = keysA[i], b = keysB[i];
+        if (Array.isArray(a) && Array.isArray(b)) {
+            // Natural sort key parts: [[1, text], [0, num], ...]
+            for (let j = 0; j < Math.min(a.length, b.length); j++) {
+                if (a[j][0] !== b[j][0]) return a[j][0] - b[j][0];
+                if (typeof a[j][1] === 'number' && typeof b[j][1] === 'number') {
+                    if (a[j][1] !== b[j][1]) return a[j][1] - b[j][1];
+                } else {
+                    const c = cmpStr(String(a[j][1]), String(b[j][1]));
+                    if (c !== 0) return c;
+                }
+            }
+            if (a.length !== b.length) return a.length - b.length;
+        } else {
+            const c = cmpStr(String(a), String(b));
+            if (c !== 0) return c;
+        }
+    }
+    return 0;
+}
+
+// ─────────────────────────────────────────────────────────
+// Column detection
+// ─────────────────────────────────────────────────────────
+function detectColumn(colName) {
+    const clean = colName.trim().toLowerCase();
+    for (const [field, keywords] of Object.entries(COLUMN_KEYWORDS)) {
+        for (const kw of keywords) {
+            if (clean.includes(kw.toLowerCase())) return field;
+        }
+    }
+    return null;
+}
+
+// ─────────────────────────────────────────────────────────
+// Excel processing
+// ─────────────────────────────────────────────────────────
+function parseRawExcel(workbook) {
+    const sheetName = workbook.SheetNames[0];
+    const ws = workbook.Sheets[sheetName];
+    const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    if (!rawRows.length) throw new Error('Excel 文件为空');
+
+    const row0 = rawRows[0].map(c => String(c).trim());
+    const row1 = rawRows.length > 1 ? rawRows[1].map(c => String(c).trim()) : [];
+
+    // Detect header structure
+    const row0HasCJK = row0.some(c => /[一-鿿]/.test(c));
+    const row1HasCJK = row1.some(c => /[一-鿿]/.test(c));
+    const row0IsSystem = row0.some(c =>
+        /lookup|userid|ext|[-]/.test(c.toLowerCase()) && !/[一-鿿]/.test(c)
+    );
+
+    let chineseHeaders, dataStart;
+
+    if (row0IsSystem && row1HasCJK) {
+        chineseHeaders = row1;
+        dataStart = 2;
+    } else if (row0HasCJK) {
+        chineseHeaders = row0;
+        dataStart = 1;
+    } else {
+        chineseHeaders = row0;
+        dataStart = 1;
+    }
+
+    // Detect column mapping
+    const columnMap = {};
+    for (let i = 0; i < chineseHeaders.length; i++) {
+        const field = detectColumn(chineseHeaders[i]);
+        if (field && !(field in columnMap)) {
+            columnMap[field] = i;
+        }
+    }
+
+    // Extract data rows
+    const dataRows = [];
+    for (let i = dataStart; i < rawRows.length; i++) {
+        const row = rawRows[i].map(c => String(c).trim());
+        if (row.some(c => c)) dataRows.push(row);
+    }
+
+    // Build preview
+    const preview = [];
+    for (let i = 0; i < Math.min(5, dataRows.length); i++) {
+        const item = {};
+        for (const [field, idx] of Object.entries(columnMap)) {
+            item[field] = idx < dataRows[i].length ? dataRows[i][idx] : '';
+        }
+        preview.push(item);
+    }
+
+    return { chineseHeaders, columnMap, dataRows, preview };
+}
+
+function generateOutputExcel(parsed) {
+    const { columnMap, dataRows, chineseHeaders } = parsed;
+
+    // Build records
+    const records = [];
+    for (const row of dataRows) {
+        const getName = field => (columnMap[field] !== undefined && columnMap[field] < row.length) ? row[columnMap[field]] : '';
+        const engRaw = getName('英文名');
+        const cnName = getName('姓名');
+        const dept2 = getName('二级部门');
+        const dept3 = getName('三级部门');
+        const dept = dept2 && dept3 ? dept2 + ' - ' + dept3 : (dept2 || dept3);
+
+        records.push({
+            "姓名": cnName,
+            "工号": getName('工号'),
+            "工牌_英文名": formatBadgeEngname(engRaw),
+            "座位牌_英文名": formatSeatEngname(engRaw, cnName),
+            "二级部门": dept,
+            "_dept2": dept2,    // 三级部门 (for sorting)
+            "_dept3": dept3,    // 四级部门 (for sorting)
+            "详细职位名称": getName('职位'),
+        });
+    }
+
+    // Sort: 工牌 by 工号 (natural), 座位牌 by 三级部门 → 四级部门 → 工号
+    const badgeRecords = records.slice().sort((a, b) =>
+        multiCmp(naturalSortKey(a['工号']), naturalSortKey(b['工号']))
+    );
+    const seatRecords = records.slice().sort((a, b) =>
+        multiCmp(
+            [naturalSortKey(a['_dept2']), naturalSortKey(a['_dept3']), naturalSortKey(a['工号'])],
+            [naturalSortKey(b['_dept2']), naturalSortKey(b['_dept3']), naturalSortKey(b['工号'])]
+        )
+    );
+
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: 工牌
+    const badgeData = [['姓名', '英文名/姓名拼音', '工号']];
+    for (const r of badgeRecords) {
+        badgeData.push([r['姓名'], r['工牌_英文名'], r['工号']]);
+    }
+    const badgeWs = XLSX.utils.aoa_to_sheet(badgeData);
+    // Auto column width
+    setColWidths(badgeWs, badgeData);
+    XLSX.utils.book_append_sheet(wb, badgeWs, '工牌');
+
+    // Sheet 2: 座位牌
+    const seatData = [['姓名', '英文名/姓名拼音', '工号', '二级部门', '详细职位名称']];
+    for (const r of seatRecords) {
+        seatData.push([r['姓名'], r['座位牌_英文名'], r['工号'], r['二级部门'], r['详细职位名称']]);
+    }
+    const seatWs = XLSX.utils.aoa_to_sheet(seatData);
+    setColWidths(seatWs, seatData);
+    XLSX.utils.book_append_sheet(wb, seatWs, '座位牌');
+
+    return { wb, records, badgeRecords, seatRecords, badgeData, seatData };
+}
+
+function setColWidths(ws, data) {
+    if (!data.length) return;
+    const colCount = data[0].length;
+    ws['!cols'] = [];
+    for (let c = 0; c < colCount; c++) {
+        let maxLen = 8;
+        for (const row of data) {
+            const val = String(row[c] || '');
+            let charLen = 0;
+            for (const ch of val) {
+                charLen += /[一-鿿㐀-䶿]/.test(ch) ? 2.2 : 1.0;
+            }
+            maxLen = Math.max(maxLen, charLen);
+        }
+        ws['!cols'].push({ wch: Math.min(maxLen + 2, 40) });
+    }
+}
+
+// ─────────────────────────────────────────────────────────
+// UI State
+// ─────────────────────────────────────────────────────────
+let state = {
+    excelFile: null,
+    parsed: null,
+    outputWb: null,
+};
+
+// ─────────────────────────────────────────────────────────
+// Events
+// ─────────────────────────────────────────────────────────
+function init() {
+    const dropZone = $('#drop-zone');
+    const fileInput = $('#file-input');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('border-green-400','bg-green-50'); });
+    dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('border-green-400','bg-green-50'); });
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('border-green-400','bg-green-50');
+        if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) handleFile(fileInput.files[0]);
+    });
+}
+
+async function handleFile(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext !== 'xlsx' && ext !== 'xls') {
+        alert('请选择 .xlsx 格式的 Excel 文件');
+        return;
+    }
+
+    // Show loading
+    const zone = $('#drop-zone');
+    zone.innerHTML = '<div class="loading-spinner"></div><p class="text-sm text-gray-500 mt-3">正在解析...</p>';
+
+    try {
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer, { type: 'array' });
+        const parsed = parseRawExcel(wb);
+
+        state.excelFile = file;
+        state.parsed = parsed;
+
+        // Pre-generate output
+        const output = generateOutputExcel(parsed);
+        state.outputWb = output.wb;
+
+        render();
+    } catch (err) {
+        alert('解析失败：' + err.message);
+        render();
+    }
+}
+
+function render() {
+    const zone = $('#drop-zone');
+    const status = $('#upload-status');
+    const previewDiv = $('#step-preview');
+    const downloadDiv = $('#step-download');
+
+    // Reset drop zone
+    zone.innerHTML = `
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        <p class="mt-2 text-sm text-gray-600">
+            <span class="font-medium text-green-600">点击上传</span> 或拖拽 Excel 文件到此处
+        </p>
+        <p class="text-xs text-gray-400 mt-1">支持从系统导出的在职员工 .xlsx 文件</p>`;
+
+    if (!state.parsed) {
+        status.innerHTML = '';
+        previewDiv.style.display = 'none';
+        downloadDiv.style.display = 'none';
+        return;
+    }
+
+    const p = state.parsed;
+    status.innerHTML = `
+        <div class="flex items-center gap-2 text-sm text-green-700 bg-green-50 px-3 py-2 rounded-lg mt-3">
+            <span>✅</span>
+            已上传：<strong>${state.excelFile.name}</strong>（${p.dataRows.length} 条记录，${p.chineseHeaders.length} 列）
+        </div>`;
+
+    // Mapping preview
+    const mappingFields = ['姓名','英文名','工号','二级部门','三级部门','职位'];
+    const mappingLabels = {
+        '姓名':'姓名','英文名':'英文名/姓名拼音','工号':'工号',
+        '二级部门':'二级部门','三级部门':'三级部门','职位':'详细职位名称'
+    };
+    let mappingHtml = '';
+    for (const f of mappingFields) {
+        const found = (f in p.columnMap) ? p.chineseHeaders[p.columnMap[f]] : null;
+        mappingHtml += `
+            <tr>
+                <td class="px-3 py-2 border-b font-medium text-gray-800">${mappingLabels[f]}</td>
+                <td class="px-3 py-2 border-b text-gray-600">${found || '—'}</td>
+                <td class="px-3 py-2 border-b text-center">${found ? '<span class="text-green-600">✅ 已匹配</span>' : '<span class="text-amber-500">⚠ 未找到</span>'}</td>
+            </tr>`;
+    }
+
+    // Data preview table
+    let previewHtml = p.chineseHeaders.map(h => `<th class="px-2 py-1.5 text-left text-gray-500 font-medium border-b bg-gray-50">${h}</th>`).join('');
+    let previewRowsHtml = '';
+    for (const row of p.preview) {
+        let cells = '';
+        for (const field of ['姓名','英文名','工号','二级部门','三级部门','职位']) {
+            cells += `<td class="px-2 py-1 border-b text-gray-700 text-xs">${row[field] || ''}</td>`;
+        }
+        previewRowsHtml += `<tr class="hover:bg-gray-50">${cells}</tr>`;
+    }
+
+    previewDiv.style.display = 'block';
+    previewDiv.innerHTML = `
+        <div class="flex items-center gap-3 mb-3">
+            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-green-600 text-white font-bold text-sm">2</span>
+            <h2 class="text-lg font-semibold text-gray-800">列映射 & 数据预览</h2>
+        </div>
+        <div class="overflow-x-auto mb-4">
+            <table class="w-full text-sm border border-gray-200 rounded-lg">
+                <thead><tr class="bg-blue-50">
+                    <th class="px-3 py-2 text-left text-gray-600 border-b">目标字段</th>
+                    <th class="px-3 py-2 text-left text-gray-600 border-b">源数据列</th>
+                    <th class="px-3 py-2 text-center text-gray-600 border-b">状态</th>
+                </tr></thead>
+                <tbody>${mappingHtml}</tbody>
+            </table>
+        </div>
+        <h3 class="text-sm font-medium text-gray-700 mb-2">数据预览（前 ${Math.min(5, p.preview.length)} 行）</h3>
+        <div class="overflow-x-auto border border-gray-200 rounded-lg">
+            <table class="w-full text-xs">
+                <thead><tr>${previewHtml}</tr></thead>
+                <tbody>${previewRowsHtml}</tbody>
+            </table>
+        </div>`;
+
+    // Sample output preview
+    const output = state.outputWb ? generateOutputExcel(state.parsed) : null;
+    downloadDiv.style.display = 'block';
+    let sampleBadgeHtml = '';
+    let sampleSeatHtml = '';
+    if (output) {
+        for (let i = 0; i < Math.min(5, output.badgeRecords.length); i++) {
+            const r = output.badgeRecords[i];
+            sampleBadgeHtml += `<tr><td class="px-2 py-1 border-b text-xs">${r['姓名']}</td><td class="px-2 py-1 border-b text-xs">${r['工牌_英文名']}</td><td class="px-2 py-1 border-b text-xs">${r['工号']}</td></tr>`;
+        }
+        for (let i = 0; i < Math.min(5, output.seatRecords.length); i++) {
+            const r = output.seatRecords[i];
+            sampleSeatHtml += `<tr><td class="px-2 py-1 border-b text-xs">${r['姓名']}</td><td class="px-2 py-1 border-b text-xs">${r['座位牌_英文名']}</td><td class="px-2 py-1 border-b text-xs">${r['工号']}</td><td class="px-2 py-1 border-b text-xs">${r['二级部门']}</td><td class="px-2 py-1 border-b text-xs">${r['详细职位名称']}</td></tr>`;
+        }
+    }
+
+    downloadDiv.innerHTML = `
+        <div class="flex items-center gap-3 mb-3">
+            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-green-600 text-white font-bold text-sm">3</span>
+            <h2 class="text-lg font-semibold text-gray-800">生成 & 下载</h2>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">
+            将生成包含两个 Sheet 的 Excel 文件：<br>
+            <strong>「工牌」</strong>— 姓名、英文名、工号（按工号排序）&nbsp;&nbsp;|&nbsp;&nbsp;
+            <strong>「座位牌」</strong>— 姓名、英文名_姓拼音、工号、二级部门、职位（按部门排序）
+        </p>
+        <div class="flex gap-3 mb-4">
+            <div class="flex-1 border rounded-lg p-3">
+                <h4 class="text-xs font-semibold text-gray-500 mb-1">🏷 工牌 预览</h4>
+                <table class="w-full"><thead><tr class="bg-gray-50">
+                    <th class="px-2 py-1 text-left text-gray-500 text-xs border-b">姓名</th>
+                    <th class="px-2 py-1 text-left text-gray-500 text-xs border-b">英文名</th>
+                    <th class="px-2 py-1 text-left text-gray-500 text-xs border-b">工号</th>
+                </tr></thead><tbody>${sampleBadgeHtml}</tbody></table>
+            </div>
+            <div class="flex-1 border rounded-lg p-3">
+                <h4 class="text-xs font-semibold text-gray-500 mb-1">🪑 座位牌 预览</h4>
+                <table class="w-full"><thead><tr class="bg-gray-50">
+                    <th class="px-2 py-1 text-left text-gray-500 text-xs border-b">姓名</th>
+                    <th class="px-2 py-1 text-left text-gray-500 text-xs border-b">英文名</th>
+                    <th class="px-2 py-1 text-left text-gray-500 text-xs border-b">工号</th>
+                    <th class="px-2 py-1 text-left text-gray-500 text-xs border-b">部门</th>
+                    <th class="px-2 py-1 text-left text-gray-500 text-xs border-b">职位</th>
+                </tr></thead><tbody>${sampleSeatHtml}</tbody></table>
+            </div>
+        </div>
+        <button id="download-btn" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition text-lg shadow-sm cursor-pointer">
+            📥 下载 Excel 文件
+        </button>`;
+
+    // Bind download
+    $('#download-btn').addEventListener('click', () => {
+        if (!state.outputWb) return;
+        const baseName = (state.excelFile.name || '员工表').replace(/\.(xlsx|xls)$/i, '');
+        XLSX.writeFile(state.outputWb, baseName + '_工牌座位牌.xlsx');
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    init();
+    render();
+});
+</script>
+</body>
+</html>

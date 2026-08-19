@@ -182,16 +182,30 @@ async function readSourceExcel(file){
   const buf=await file.arrayBuffer();
   const wb=new ExcelJS.Workbook();await wb.xlsx.load(buf);
   const ws=wb.worksheets[0];
-  const rows=[];ws.eachRow({includeEmpty:true},r=>{const v=[];r.eachCell({includeEmpty:false},c=>v.push(c.value));while(v.length<7)v.push(null);rows.push(v)});
+  const rows=[];ws.eachRow({includeEmpty:true},r=>{const v=[];r.eachCell({includeEmpty:false},(c,cn)=>{v[cn-1]=c.value});rows.push(v)});
   if(rows.length<2)throw new Error('Excel文件格式不正确');
-  const hdrs=rows[1],ci={};hdrs.forEach((h,i)=>{if(h)ci[String(h).trim()]=i});
+  const norm=s=>String(s==null?'':s).replace(/[\s　]+/g,'');
+  const aliases={
+    '姓名':['姓名','员工姓名','中文名','名字','中文姓名'],
+    '英文名/姓名拼音':['英文名/姓名拼音','英文名','姓名拼音','拼音','英文姓名','英文名/拼音','English Name','EnglishName'],
+    '工号':['工号','员工工号','员工编号','编号','工號','工作证号','Job No'],
+    '二级部门':['二级部门','二级单位','部门二'],
+    '三级部门':['三级部门','三级单位','部门三'],
+    '详细职位名称':['详细职位名称','职位名称','职位','岗位','岗位名称','职务'],
+    '工作地点':['工作地点','工作地','所在地','地点']
+  };
   // 必需列
   const req=['姓名','英文名/姓名拼音','工号'];
-  const miss=req.filter(k=>!(k in ci));if(miss.length)throw new Error('缺少列: '+miss.join('、'));
   // 可选列
   const opt=['二级部门','三级部门','详细职位名称','工作地点'];
+  const cols=req.concat(opt);
+  const matchRow=r=>{const s=new Set((r||[]).map(norm));let n=0;cols.forEach(k=>{if(aliases[k].some(a=>s.has(norm(a))))n++});return n};
+  let hdr=0,best=-1;
+  for(let i=0;i<Math.min(rows.length,20);i++){const m=matchRow(rows[i]);if(m>best){best=m;hdr=i}}
+  const ci={};(rows[hdr]||[]).forEach((h,i)=>{const n=norm(h);for(const k of cols){if(aliases[k].some(a=>norm(a)===n)){ci[k]=i;break}}});
+  const miss=req.filter(k=>!(k in ci));if(miss.length)throw new Error('缺少列: '+miss.join('、'));
   const emps=[];
-  for(let i=2;i<rows.length;i++){
+  for(let i=hdr+1;i<rows.length;i++){
     const r=rows[i];if(!r||r.every(c=>!c))continue;
     const c=String(r[ci['姓名']]||'').trim(),e=String(r[ci['英文名/姓名拼音']]||'').trim();
     const j=String(r[ci['工号']]||'').trim();
